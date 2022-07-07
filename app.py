@@ -34,9 +34,14 @@ def token_required(func):
     def decorated(*args, **kwargs):
         token = request.headers.get('token')
         if not token:
-            return jsonify({'Alerta': 'O token expirou'})
+            return jsonify({'Alerta': 'Token inválido'})
         try:
             payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            dateJWT = datetime.strptime(payload['expiration'], '%Y-%m-%d %H:%M:%S.%f')
+            if(dateJWT < datetime.now()):
+                return Response(response=json.dumps({
+                "status": 504,
+                "mensagem": "Seu token expirou"}), status=504, mimetype='application/json')
             return Response(response=json.dumps({
                 "status": 200,
                 "mensagem": "Você está autenticado"}), status=200, mimetype='application/json')
@@ -79,37 +84,43 @@ def cadastrarUsuario():
 def autenticarUsuario():   
     if request.method == 'POST':
         respSenha = ''
+        respNome = ''
+        respId = ''
         request_data = request.get_json() 
         loginSenha = request_data['senha'].encode('utf-8')
         resp = db.session.query(Usuario).filter(Usuario.email == request_data['email'])
         for r in resp:
+            respId = r.id
+            respNome = r.nome
             respSenha = (r.senha).encode('utf-8')
         
         if request_data['email'] == '':
             return Response(response=json.dumps({
                 "status": 400,
-                "mensagem": "Seu email está vazio"}), status=201, mimetype='application/json')
+                "mensagem": "Seu email está vazio"}), status=400, mimetype='application/json')
         
         elif respSenha == '':
             return Response(response=json.dumps({
                 "status": 400,
-                "mensagem": "Não existe um usuario com esse email"}), status=201, mimetype='application/json')
+                "mensagem": "Não existe um usuario com esse email"}), status=400, mimetype='application/json')
         
         else :
             if bcrypt.checkpw(loginSenha, respSenha):
                 token = jwt.encode({
-                    'user': request_data['email'],
-                    'expiration': str(datetime.utcnow() + timedelta(minutes=15))
+                    'id': respId,
+                    'nome': respNome,
+                    'email': request_data['email'],
+                    'expiration': str(datetime.now() + timedelta(minutes=30))
                 },
                 app.config['SECRET_KEY'], algorithm="HS256")
                 return Response(response=json.dumps({
                     "status": 201,
-                    "TOKEN": token}), status=201, mimetype='application/json')
+                    "token": token}), status=201, mimetype='application/json')
             
             else :
                 return Response(response=json.dumps({
-                        "status": 201,
-                        "mensagem": "As senhas não batem"}), status=201, mimetype='application/json')
+                        "status": 400,
+                        "mensagem": "As senhas não batem"}), status=400, mimetype='application/json')
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0")
